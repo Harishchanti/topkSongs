@@ -6,6 +6,8 @@ import org.apache.spark.sql.Row;
 
 import org.apache.spark.sql.SparkSession;
 
+import static org.apache.spark.sql.functions.col;
+
 public class SparkKafkaRedisApp {
 
     public static void main(String[] args) throws Exception {
@@ -14,17 +16,32 @@ public class SparkKafkaRedisApp {
                 SparkSession.builder().master("local[*]").appName("KafkaRedis")
                         .getOrCreate();
 
-        Dataset<Row> df = spark.readStream().format("kafka")
+        Dataset<Row> kafkaDF = spark.readStream().format("kafka")
                 .option("kafka.bootstrap.servers", "localhost:9092")
                 .option("subscribe", "numbers-topic").load();
 
-        Dataset<Row> values = df.selectExpr("CAST(value AS STRING)");
-        values.writeStream().foreachBatch((batch, id) -> {
-            batch.collectAsList().forEach(row -> {
-                String value = row.getString(0);
-                RedisWriter.save(value);
-            });
-        }).start().awaitTermination();
+        // Convert Kafka value to Integer
+
+        Dataset<Row> numbersDF =
+                kafkaDF.selectExpr("CAST(value AS STRING) as number")
+                        .select(col("number").cast("int").alias("number"));
+
+        // Count frequencies
+        Dataset<Row> frequencyDF = numbersDF.groupBy("number").count();
+
+        // Write to Redis
+
+        frequencyDF.writeStream().outputMode("complete")
+                .foreachBatch((batchDF, batchId) -> {
+                    System.out.println(
+                            "\n========== Batch : " + batchId + " ==========");
+                    batchDF.show(false);
+                    batchDF.collectAsList().forEach(row -> {
+                        Integer number = row.getAs("number");
+                        Long count = row.getAs("count");
+                        RedisWriter.save(number, count);
+                    });
+                }).start().awaitTermination();
 
     }
 

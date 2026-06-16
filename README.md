@@ -2,7 +2,7 @@
 
 ## Architecture
 
-![topk-songs.png](../../Downloads/topk-songs.png)
+![topk-songs.png](topk-songs.png)
 
 ### Step 1: Install Docker Desktop
 
